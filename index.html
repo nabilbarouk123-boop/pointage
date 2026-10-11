@@ -39,13 +39,14 @@ h3{margin:4px 0 8px;font-size:16px}.mut{color:var(--mut);font-size:14px}
 .pg{display:none}.pg.on{display:block}
 </style></head><body>
 <header><span>PROMINOX · Pointage</span><small id="who"></small></header>
-<nav><button data-t="sc" class="on">Scanner</button><button data-t="td">Journée</button><button data-t="rg">Réglages</button></nav>
+<nav><button data-t="sc" class="on">Scanner</button><button data-t="td">Journée</button><button data-t="mo">Mois</button><button data-t="rg">Réglages</button></nav>
 <main>
 <section class="pg on" id="sc">
  <div class="card"><div id="vwrap"><video id="v" playsinline muted></video><div id="frame"><span></span><span></span><span></span><span></span></div><div id="hint">Placez le QR dans le carré · réglez le zoom</div></div><canvas id="c" hidden></canvas>
   <div class="row"><button class="b" id="cam">Démarrer la caméra</button></div>
   <div id="zrow" style="display:none;align-items:center;gap:10px;margin-top:10px"><span class="mut" style="font-size:13px;white-space:nowrap">🔍 Zoom</span><input id="zoom" type="range" min="1" max="4" step="0.1" value="1" style="flex:1"><span id="zval" class="mut" style="font-size:13px;width:38px;text-align:right">1.0×</span></div>
   <div id="res"></div></div>
+ <p class="mut" style="margin:-4px 2px 12px">1er scan = <b>Entrée</b> · 2e scan = <b>Sortie</b>. Les heures travaillées et les <b>heures supplémentaires</b> sont calculées automatiquement.</p>
  <div class="card"><h3>Saisie manuelle</h3><div class="row" style="margin-top:0"><input id="man" placeholder="CIN (ex. H118474)" inputmode="text"><button class="b" id="mb" style="width:110px">Pointer</button></div></div>
  <div class="kp"><div><b id="k1">0</b><span class="mut">Pointés</span></div><div><b id="k2">0</b><span class="mut">Restants</span></div></div>
 </section>
@@ -56,8 +57,15 @@ h3{margin:4px 0 8px;font-size:16px}.mut{color:var(--mut);font-size:14px}
  <div class="card"><h3>Présents</h3><div id="lp"></div></div>
  <button class="b" id="exp">Exporter la journée (CSV)</button>
 </section>
+<section class="pg" id="mo">
+ <div class="card"><input type="month" id="mm"></div>
+ <div class="kp"><div><b id="m1">0h00</b><span class="mut">Total heures</span></div><div><b id="m2">0h00</b><span class="mut">Heures supp</span></div></div>
+ <div class="card"><h3>Récapitulatif par employé</h3><div id="lm"></div></div>
+ <button class="b" id="expm">Exporter le mois (CSV)</button>
+</section>
 <section class="pg" id="rg">
  <div class="card"><h3>Responsable</h3><input id="resp" placeholder="Nom du responsable pointage"></div>
+ <div class="card"><h3>Heures de travail</h3><p class="mut">Durée normale par jour. Tout ce qui dépasse est compté en <b>heures supplémentaires</b> (calculé à partir de l'entrée et de la sortie).</p><div class="row" style="margin-top:0;align-items:center"><input id="nh" type="number" min="1" max="24" step="0.5" style="width:120px"><span class="mut">heures / jour</span></div></div>
  <div class="card"><h3>Liste du personnel (facultatif)</h3>
   <p class="mut">Le pointage marche sans liste : le nom est lu dans le QR du badge. Importe la liste seulement pour voir les <b>non pointés / absents</b> (CSV : <b>cin ; nom ; prenom ; fonction</b>). <span id="nemp"></span></p>
   <input type="file" id="fi" accept=".csv,.txt,.json"></div>
@@ -10170,7 +10178,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
 });</script>
 <script>
 (function(){
-var K='prominox_pointage_v2',S={emps:[],logs:{},st:{},known:{},resp:''},$=function(i){return document.getElementById(i)};
+var K='prominox_pointage_v2',S={emps:[],logs:{},st:{},known:{},resp:'',normH:8},$=function(i){return document.getElementById(i)};
 try{var r=localStorage.getItem(K);if(r)S=Object.assign(S,JSON.parse(r));}catch(e){}
 function save(){try{localStorage.setItem(K,JSON.stringify(S));}catch(e){}}
 function pad(n){return n<10?'0'+n:''+n}
@@ -10181,9 +10189,13 @@ function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return
 function nc(s){return String(s==null?'':s).replace(/\s/g,'').toUpperCase()}
 function emp(c){c=nc(c);for(var i=0;i<S.emps.length;i++)if(S.emps[i].cin===c)return S.emps[i];return null}
 function nm(e){return((e.nom||'')+' '+(e.prenom||'')).trim()||e.cin}
+function mns(t){var p=String(t||'0:0').split(':');return (+p[0]||0)*60+(+p[1]||0)}
+function hm(m){m=Math.max(0,Math.round(m));return Math.floor(m/60)+'h'+pad(m%60)}
+function normH(){return (parseFloat(S.normH)>0?parseFloat(S.normH):8)*60}
+function wrk(l){if(!l)return null;var e=l.e||l.t;if(!e||!l.s)return null;var em=mns(e),sm=mns(l.s);if(sm<em)sm+=1440;return sm-em}
 /* onglets */
 var tabs=document.querySelectorAll('nav button');
-tabs.forEach(function(b){b.onclick=function(){tabs.forEach(function(x){x.classList.toggle('on',x===b)});document.querySelectorAll('.pg').forEach(function(p){p.classList.toggle('on',p.id===b.dataset.t)});if(b.dataset.t!=='sc')stopCam();if(b.dataset.t==='td')renderDay();}});
+tabs.forEach(function(b){b.onclick=function(){tabs.forEach(function(x){x.classList.toggle('on',x===b)});document.querySelectorAll('.pg').forEach(function(p){p.classList.toggle('on',p.id===b.dataset.t)});if(b.dataset.t!=='sc')stopCam();if(b.dataset.t==='td')renderDay();if(b.dataset.t==='mo')renderMonth();}});
 /* pointage */
 function parseQR(t){
   t=String(t||'').trim();var o={cin:'',nom:'',fonc:'',exp:0},m=t.match(/[#?&]p=([^&#\s]+)/);
@@ -10205,12 +10217,19 @@ function mark(txt){
     if(q.nom||!S.emps.length){e={cin:q.cin,nom:q.nom,prenom:'',fonc:q.fonc};S.known[q.cin]={nom:q.nom,fonc:q.fonc}}
     else{show('er','CIN inconnue : '+esc(q.cin));return}
   }
-  var n=new Date(),d=dstr(n);S.logs[d]=S.logs[d]||{};
-  if(S.logs[d][e.cin]){show('wa','D\u00e9j\u00e0 point\u00e9 \u00e0 '+S.logs[d][e.cin].t+'<br>'+esc(nm(e)));return}
-  S.logs[d][e.cin]={t:tstr(n),by:S.resp||''};if(S.st[d])delete S.st[d][e.cin];save();
-  show(q.exp?'wa':'ok','POINT\u00c9 \u2713 '+tstr(n)+'<br>'+esc(nm(e))+(e.fonc?'<br><small>'+esc(e.fonc)+'</small>':'')+(q.exp?'<br><small>\u26a0 '+q.exp+' document(s) expir\u00e9(s)</small>':''));
+  var n=new Date(),d=dstr(n),hh=tstr(n);S.logs[d]=S.logs[d]||{};var cur=S.logs[d][e.cin];
+  var nmx=esc(nm(e))+(e.fonc?'<br><small>'+esc(e.fonc)+'</small>':'')+(q.exp?'<br><small>\u26a0 '+q.exp+' document(s) expir\u00e9(s)</small>':'');
+  if(!cur){
+    S.logs[d][e.cin]={e:hh,by:S.resp||''};if(S.st[d])delete S.st[d][e.cin];save();
+    show(q.exp?'wa':'ok','ENTR\u00c9E \u2713 '+hh+'<br>'+nmx);
+  }else{
+    var en=cur.e||cur.t;cur.e=en;cur.s=hh;delete cur.t;save();
+    var w=wrk(cur),su=w==null?null:Math.max(0,w-normH());
+    var det='Entr\u00e9e '+en+' \u2192 Sortie '+hh+(w!=null?'<br>Travaill\u00e9 : <b>'+hm(w)+'</b>'+(su?' \u00b7 Supp <b>'+hm(su)+'</b>':' \u00b7 pas d\'heures supp'):'');
+    show('ok','SORTIE \u2713 '+hh+'<br>'+nmx+'<br><small>'+det+'</small>');
+  }
   try{navigator.vibrate&&navigator.vibrate(120)}catch(x){}
-  kp();
+  if(typeof renderDay==='function')renderDay();kp();
 }
 function kp(){var d=dstr(new Date()),L=S.logs[d]||{},n=Object.keys(L).length,inl=S.emps.filter(function(e){return L[e.cin]}).length;$('k1').textContent=n;$('k2').textContent=S.emps.length?Math.max(0,S.emps.length-inl):'-'}
 $('mb').onclick=function(){var v=$('man').value.trim();if(v){mark(v);$('man').value=''}};
@@ -10268,18 +10287,18 @@ function tick(){
 }
 /* journee */
 var dt=$('dt');dt.value=dstr(new Date());dt.onchange=renderDay;
-var STS=['Absent','Cong\u00e9','Maladie','Absent justifi\u00e9'];
+var STS=['Pr\u00e9sent','Absent','Cong\u00e9','Maladie','Absent justifi\u00e9'];
 function dayEmps(L){var E=S.emps.slice();Object.keys(L).forEach(function(c){if(!emp(c)){var k=S.known[c]||{};E.push({cin:c,nom:k.nom||'',prenom:'',fonc:k.fonc||''})}});return E}
 function renderDay(){
   var d=dt.value||dstr(new Date()),L=S.logs[d]||{},T=S.st[d]||{},np='',pr='',a=0,b=0;
   dayEmps(L).forEach(function(e){
-    if(L[e.cin]){a++;pr+='<div class="it"><div>'+esc(nm(e))+'<small>'+esc(e.cin)+' \u00b7 '+L[e.cin].t+'</small></div><button class="b g" style="width:auto;padding:6px 10px;font-size:13px" data-u="'+esc(e.cin)+'">Annuler</button></div>'}
+    if(L[e.cin]){a++;var l=L[e.cin],en=l.e||l.t,so=l.s,w=wrk(l),su=w==null?null:Math.max(0,w-normH());var sub=esc(e.cin)+' \u00b7 '+en+(so?(' \u2192 '+so+' \u00b7 '+hm(w)+(su?' <b>(supp '+hm(su)+')</b>':'')):' \u00b7 <i>pas de sortie</i>');pr+='<div class="it"><div>'+esc(nm(e))+'<small>'+sub+'</small></div><button class="b g" style="width:auto;padding:6px 10px;font-size:13px" data-u="'+esc(e.cin)+'">Annuler</button></div>'}
     else{b++;var o=STS.map(function(s){return'<option'+((T[e.cin]||'Absent')===s?' selected':'')+'>'+s+'</option>'}).join('');
       np+='<div class="it"><div>'+esc(nm(e))+'<small>'+esc(e.cin)+'</small></div><select data-s="'+esc(e.cin)+'">'+o+'</select></div>'}
   });
   $('p1').textContent=a;$('p2').textContent=b;
   $('lnp').innerHTML=np||'<p class="mut">'+(S.emps.length?'Tout le monde est point\u00e9.':'Importe la liste du personnel (R\u00e9glages) pour voir qui n\'est pas point\u00e9.')+'</p>';$('lp').innerHTML=pr||'<p class="mut">Personne point\u00e9.</p>';
-  document.querySelectorAll('[data-s]').forEach(function(s){s.onchange=function(){S.st[d]=S.st[d]||{};S.st[d][s.dataset.s]=s.value;save()}});
+  document.querySelectorAll('[data-s]').forEach(function(s){s.onchange=function(){if(s.value==='Pr\u00e9sent'){var cin=s.dataset.s,nn=new Date();S.logs[d]=S.logs[d]||{};if(!S.logs[d][cin])S.logs[d][cin]={e:tstr(nn),by:S.resp||''};if(S.st[d])delete S.st[d][cin];save();renderDay();kp();return}S.st[d]=S.st[d]||{};S.st[d][s.dataset.s]=s.value;save()}});
   document.querySelectorAll('[data-u]').forEach(function(u){u.onclick=function(){if(confirm('Annuler le pointage ?')){delete S.logs[d][u.dataset.u];save();renderDay();kp()}}});
 }
 function dl(name,txt,mime){
@@ -10288,12 +10307,32 @@ function dl(name,txt,mime){
   var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(function(){a.remove()},500);
 }
 $('exp').onclick=function(){
-  var d=dt.value||dstr(new Date()),L=S.logs[d]||{},T=S.st[d]||{},rows=['Date;CIN;Nom;Fonction;Statut;Heure;Responsable'];
-  dayEmps(L).forEach(function(e){var p=L[e.cin];rows.push([fr(d),e.cin,nm(e),e.fonc||'',p?'Pr\u00e9sent':(T[e.cin]||'Absent'),p?p.t:'',p?p.by:''].map(function(x){return String(x).replace(/;/g,',')}).join(';'))});
+  var d=dt.value||dstr(new Date()),L=S.logs[d]||{},T=S.st[d]||{},rows=['Date;CIN;Nom;Fonction;Statut;Entr\u00e9e;Sortie;Heures;Normales;Supp;Responsable'];
+  function cl(x){return String(x).replace(/;/g,',')}
+  dayEmps(L).forEach(function(e){var p=L[e.cin];
+    if(p){var en=p.e||p.t,so=p.s||'',w=wrk(p),su=w==null?'':Math.max(0,w-normH());rows.push([fr(d),e.cin,nm(e),e.fonc||'','Pr\u00e9sent',en,so,w!=null?hm(w):'',hm(normH()),su!==''?hm(su):'',p.by||''].map(cl).join(';'))}
+    else{rows.push([fr(d),e.cin,nm(e),e.fonc||'',(T[e.cin]||'Absent'),'','','','','',''].map(cl).join(';'))}
+  });
   dl('Pointage_'+d+'.csv','\ufeff'+rows.join('\r\n'),'text/csv');
+};
+/* recap mensuel */
+var mm=$('mm');mm.value=dstr(new Date()).slice(0,7);mm.onchange=renderMonth;
+function monthAgg(ym){var agg={},order=[];Object.keys(S.logs).forEach(function(d){if(d.slice(0,7)!==ym)return;var L=S.logs[d];Object.keys(L).forEach(function(c){var l=L[c],w=wrk(l);if(!agg[c]){agg[c]={days:0,work:0,sup:0,noout:0};order.push(c)}agg[c].days++;if(w!=null){agg[c].work+=w;agg[c].sup+=Math.max(0,w-normH())}else agg[c].noout++;})});return {agg:agg,order:order}}
+function monthRows(ym){var r=monthAgg(ym),out=r.order.map(function(c){var k=S.known[c]||{},e=emp(c)||{cin:c,nom:k.nom||'',prenom:'',fonc:k.fonc||''};return {c:c,e:e,a:r.agg[c]}});out.sort(function(x,y){return nm(x.e).localeCompare(nm(y.e))});return out}
+function renderMonth(){
+  var ym=mm.value||dstr(new Date()).slice(0,7),rows=monthRows(ym),tot=0,ts=0,html='';
+  rows.forEach(function(r){tot+=r.a.work;ts+=r.a.sup;html+='<div class="it"><div>'+esc(nm(r.e))+'<small>'+esc(r.c)+' \u00b7 '+r.a.days+' j'+(r.a.noout?' \u00b7 '+r.a.noout+' sans sortie':'')+'</small></div><div style="text-align:right;min-width:92px"><b>'+hm(r.a.work)+'</b><small class="mut">supp '+hm(r.a.sup)+'</small></div></div>'});
+  $('lm').innerHTML=html||'<p class="mut">Aucun pointage ce mois-ci.</p>';$('m1').textContent=hm(tot);$('m2').textContent=hm(ts);
+}
+$('expm').onclick=function(){
+  var ym=mm.value||dstr(new Date()).slice(0,7),rows=monthRows(ym),out=['Mois;CIN;Nom;Fonction;Jours;Total heures;Heures normales;Heures supp'];
+  function cl(x){return String(x).replace(/;/g,',')}
+  rows.forEach(function(r){out.push([ym,r.c,nm(r.e),r.e.fonc||'',r.a.days,hm(r.a.work),hm(r.a.days*normH()),hm(r.a.sup)].map(cl).join(';'))});
+  dl('Recap_mensuel_'+ym+'.csv','\ufeff'+out.join('\r\n'),'text/csv');
 };
 /* reglages */
 $('resp').value=S.resp||'';$('resp').oninput=function(){S.resp=this.value;save();who()};
+$('nh').value=(parseFloat(S.normH)>0?parseFloat(S.normH):8);$('nh').oninput=function(){var v=parseFloat(this.value);S.normH=(v>0?v:8);save();if(typeof renderDay==='function')renderDay()};
 function who(){$('who').textContent=S.resp||''}who();
 function nemp(){$('nemp').textContent=S.emps.length?S.emps.length+' employ\u00e9s charg\u00e9s.':'Aucune liste charg\u00e9e.'}nemp();
 function norm(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z]/g,'')}
@@ -10315,7 +10354,7 @@ $('fi').onchange=function(){
   };rd.readAsText(f);
 };
 $('bk').onclick=function(){dl('Sauvegarde_Pointage_'+dstr(new Date())+'.json',JSON.stringify(S),'application/json')};
-$('rs').onchange=function(){var f=this.files[0];if(!f)return;var rd=new FileReader();rd.onload=function(){try{var o=JSON.parse(rd.result);if(!o.emps)throw 0;if(confirm('Remplacer les donn\u00e9es de ce t\u00e9l\u00e9phone par la sauvegarde ?')){S=Object.assign({emps:[],logs:{},st:{},known:{},resp:''},o);save();$('resp').value=S.resp||'';who();nemp();kp();renderDay()}}catch(e){alert('Sauvegarde invalide.')}};rd.readAsText(f)};
+$('rs').onchange=function(){var f=this.files[0];if(!f)return;var rd=new FileReader();rd.onload=function(){try{var o=JSON.parse(rd.result);if(!o.emps)throw 0;if(confirm('Remplacer les donn\u00e9es de ce t\u00e9l\u00e9phone par la sauvegarde ?')){S=Object.assign({emps:[],logs:{},st:{},known:{},resp:'',normH:8},o);save();$('resp').value=S.resp||'';if($('nh'))$('nh').value=(parseFloat(S.normH)>0?parseFloat(S.normH):8);who();nemp();kp();renderDay()}}catch(e){alert('Sauvegarde invalide.')}};rd.readAsText(f)};
 kp();
 })();
 </script></body></html>
