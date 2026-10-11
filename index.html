@@ -57,7 +57,8 @@ h3{margin:4px 0 8px;font-size:16px}.mut{color:var(--mut);font-size:14px}
 <section class="pg" id="td">
  <div class="card"><input type="date" id="dt"></div>
  <div class="card"><h3>Pointage par sélection</h3>
-  <p class="mut">Coche les présents. En validant, tous ceux qui ne sont <b>pas cochés</b> passent automatiquement en <b>Absent</b>.</p>
+  <div class="seg" id="qmode"><button data-m="e" class="on">↓ Entrée</button><button data-m="s">↑ Sortie</button></div>
+  <p class="mut" id="qhelp"></p>
   <div class="row" style="margin-top:0"><input id="qsearch" placeholder="Rechercher un nom / CIN"><button class="b g" id="qall" style="width:130px;white-space:nowrap">Tout cocher</button></div>
   <div id="qlist" style="max-height:42vh;overflow:auto;margin-top:8px"></div>
   <button class="b" id="qval" style="margin-top:10px">Valider (le reste = Absent)</button>
@@ -10312,9 +10313,19 @@ function renderDay(){
   document.querySelectorAll('[data-u]').forEach(function(u){u.onclick=function(){if(confirm('Annuler le pointage ?')){delete S.logs[d][u.dataset.u];save();renderDay();kp()}}});
 }
 var qsel={};
-function initQuick(){qsel={};var L=S.logs[dt.value]||{};Object.keys(L).forEach(function(c){qsel[c]=true})}
+var qmode='e';
+function qEmps(d){var L=S.logs[d]||{},E=dayEmps(L);if(qmode==='s')E=E.filter(function(e){return L[e.cin]});return E}
+function qlabels(){
+  $('qhelp').innerHTML=qmode==='s'
+    ?'Coche ceux qui <b>sont sortis</b> (seuls les employ\u00e9s point\u00e9s en entr\u00e9e sont list\u00e9s). En validant, l\'heure de <b>sortie</b> est enregistr\u00e9e pour les coch\u00e9s ; les non coch\u00e9s restent <b>sans sortie</b>.'
+    :'Coche les pr\u00e9sents. En validant, tous ceux qui ne sont <b>pas coch\u00e9s</b> passent automatiquement en <b>Absent</b>.';
+  $('qval').textContent=qmode==='s'?'Valider les sorties':'Valider (le reste = Absent)';
+}
+function initQuick(){qsel={};var L=S.logs[dt.value]||{};Object.keys(L).forEach(function(c){if(qmode==='s'){if(L[c].s)qsel[c]=true}else qsel[c]=true});qlabels()}
+document.querySelectorAll('#qmode button').forEach(function(b){b.onclick=function(){qmode=b.dataset.m;document.querySelectorAll('#qmode button').forEach(function(x){x.classList.toggle('on',x===b)});initQuick();renderQuick()}});
 function renderQuick(){
-  var d=dt.value||dstr(new Date()),E=dayEmps(S.logs[d]||{});
+  var d=dt.value||dstr(new Date()),E=qEmps(d);
+  if(!E.length&&qmode==='s'&&S.emps.length){$('qlist').innerHTML='<p class="mut">Aucune entrée pointée ce jour : pointe d\'abord les entrées.</p>';return}
   if(!E.length){$('qlist').innerHTML='<p class="mut">Importe la liste du personnel (R\u00e9glages) pour utiliser la s\u00e9lection.</p>';return}
   var f=norm($('qsearch').value),h='';
   E.forEach(function(e){if(f&&norm(nm(e)+' '+e.cin).indexOf(f)<0)return;h+='<label class="it" style="cursor:pointer"><span>'+esc(nm(e))+'<small>'+esc(e.cin)+(e.fonc?' \u00b7 '+esc(e.fonc):'')+'</small></span><input type="checkbox" data-q="'+esc(e.cin)+'"'+(qsel[e.cin]?' checked':'')+' style="width:22px;height:22px;flex:0 0 auto"></label>'});
@@ -10322,9 +10333,19 @@ function renderQuick(){
   document.querySelectorAll('[data-q]').forEach(function(c){c.onchange=function(){if(c.checked)qsel[c.dataset.q]=true;else delete qsel[c.dataset.q]}});
 }
 $('qsearch').oninput=renderQuick;
-$('qall').onclick=function(){var d=dt.value||dstr(new Date()),E=dayEmps(S.logs[d]||{});var allOn=E.length&&E.every(function(e){return qsel[e.cin]});E.forEach(function(e){if(allOn)delete qsel[e.cin];else qsel[e.cin]=true});renderQuick()};
+$('qall').onclick=function(){var d=dt.value||dstr(new Date()),E=qEmps(d);var allOn=E.length&&E.every(function(e){return qsel[e.cin]});E.forEach(function(e){if(allOn)delete qsel[e.cin];else qsel[e.cin]=true});renderQuick()};
 $('qval').onclick=function(){
-  var d=dt.value||dstr(new Date()),E=dayEmps(S.logs[d]||{});
+  var d=dt.value||dstr(new Date()),E=qEmps(d);
+  if(qmode==='s'){
+    if(!E.length){alert('Aucune entr\u00e9e point\u00e9e ce jour : pointe d\'abord les entr\u00e9es.');return}
+    var so=0,ns=0;E.forEach(function(e){if(qsel[e.cin])so++;else ns++});
+    if(!confirm(so+' sortie(s), '+ns+' sans sortie. Valider ?'))return;
+    var hh=tstr(new Date());
+    E.forEach(function(e){var l=S.logs[d][e.cin];if(!l)return;
+      if(qsel[e.cin]){if(!l.s){l.e=l.e||l.t||'';delete l.t;l.s=hh;l.by=l.by||S.resp||''}}
+      else{delete l.s}});
+    save();renderDay();kp();renderQuick();alert('Sorties enregistr\u00e9es : '+so+' sortie(s), '+ns+' sans sortie.');return;
+  }
   if(!E.length){alert('Importe d\'abord la liste du personnel (R\u00e9glages).');return}
   var pres=0,abs=0;E.forEach(function(e){if(qsel[e.cin])pres++;else abs++});
   if(!confirm(pres+' pr\u00e9sent(s), '+abs+' absent(s). Valider ? Les non coch\u00e9s passeront en Absent.'))return;
