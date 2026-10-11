@@ -10226,7 +10226,7 @@ $('cam').onclick=function(){
 function setupZoom(){
   zoom=1;zoomCap=null;v.style.transform='scale(1)';var zr=$('zoom');zr.min=1;zr.max=4;zr.step=0.1;zr.value=1;$('zval').textContent='1.0\u00d7';
   try{var tr=stream.getVideoTracks()[0],caps=(tr&&tr.getCapabilities)?tr.getCapabilities():null;
-    if(caps&&caps.zoom){zoomCap={track:tr};zr.min=caps.zoom.min||1;zr.max=caps.zoom.max||4;zr.step=caps.zoom.step||0.1;zr.value=caps.zoom.min||1;zoom=+zr.value;$('zval').textContent=(+zoom).toFixed(1)+'\u00d7';}
+    if(caps&&caps.zoom){zoomCap={track:tr};var mn=Math.max(1,caps.zoom.min||1),mx=Math.max(mn+0.5,caps.zoom.max||4);zr.min=mn;zr.max=mx;zr.step=caps.zoom.step||0.1;zr.value=mn;zoom=mn;$('zval').textContent=mn.toFixed(1)+'\u00d7';try{tr.applyConstraints({advanced:[{zoom:mn}]});}catch(e2){}}
   }catch(e){}
 }
 $('zoom').oninput=function(){
@@ -10235,22 +10235,31 @@ $('zoom').oninput=function(){
   v.style.transform='scale('+zoom+')';
 };
 var _lastScan=0;
+function _dec(sx,sy,s,cap){
+  var k=Math.min(1,cap/s),c=Math.max(1,Math.round(s*k));
+  cv.width=c;cv.height=c;cx.drawImage(v,sx,sy,s,s,0,0,c,c);
+  var im=cx.getImageData(0,0,c,c);
+  return jsQR(im.data,c,c,{inversionAttempts:'attemptBoth'});
+}
 function tick(){
   if(!scan)return;
   var now=Date.now();
-  if(v.readyState>=2&&now>lock&&now-_lastScan>=80){
+  if(v.readyState>=2&&now>lock&&now-_lastScan>=90){
     _lastScan=now;
     var w=v.videoWidth,h=v.videoHeight;
     if(w){
-      /* Passe 1 : image enti\u00e8re (tol\u00e9rante \u00e0 la position du QR) */
-      var k=Math.min(1,1000/w),cw=Math.round(w*k),ch=Math.round(h*k);
+      var q=null;
+      /* Passe 1 : image enti\u00e8re haute r\u00e9so (QR o\u00f9 qu'il soit) */
+      var k=Math.min(1,1280/w),cw=Math.round(w*k),ch=Math.round(h*k);
       cv.width=cw;cv.height=ch;cx.drawImage(v,0,0,cw,ch);
-      var im=cx.getImageData(0,0,cw,ch),q=jsQR(im.data,cw,ch,{inversionAttempts:'attemptBoth'});
+      var im=cx.getImageData(0,0,cw,ch);q=jsQR(im.data,cw,ch,{inversionAttempts:'attemptBoth'});
       if(!(q&&q.data)){
-        /* Passe 2 : zoom carr\u00e9 au centre, haute r\u00e9solution (QR petit/\u00e9loign\u00e9) */
-        var dz=zoomCap?1:(zoom||1),s=Math.min(w,h)/dz,sx=(w-s)/2,sy=(h-s)/2,cap=Math.min(s,900),k2=cap/s,c2=Math.round(s*k2);
-        cv.width=c2;cv.height=c2;cx.drawImage(v,sx,sy,s,s,0,0,c2,c2);
-        var im2=cx.getImageData(0,0,c2,c2);q=jsQR(im2.data,c2,c2,{inversionAttempts:'attemptBoth'});
+        /* Passes 2-3 : zooms carr\u00e9s au centre (QR petit / \u00e9loign\u00e9) */
+        var mn=Math.min(w,h),fr2=[0.6,0.33];
+        for(var i=0;i<fr2.length&&!(q&&q.data);i++){
+          var s=mn*fr2[i],sx=(w-s)/2,sy=(h-s)/2;
+          q=_dec(sx,sy,s,1024);
+        }
       }
       if(q&&q.data){lock=Date.now()+2000;var fr=$('frame');if(fr){fr.classList.add('hit');setTimeout(function(){fr.classList.remove('hit')},800)}mark(q.data)}
     }
