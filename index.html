@@ -37,21 +37,31 @@ video{width:100%;border-radius:12px;background:#000;max-height:46vh;object-fit:c
 .it:last-child{border:0}.it small{color:var(--mut);display:block}.it select{width:135px;padding:7px;font-size:14px}
 h3{margin:4px 0 8px;font-size:16px}.mut{color:var(--mut);font-size:14px}
 .pg{display:none}.pg.on{display:block}
+.seg{display:flex;gap:6px;margin-bottom:10px}
+.seg button{flex:1;padding:11px 6px;border:1px solid var(--bd);background:var(--card);color:var(--mut);border-radius:10px;font-size:15px;font-weight:700}
+.seg button.on{color:#fff;border-color:transparent}
+.seg button[data-m="e"].on{background:var(--ok)}.seg button[data-m="s"].on{background:var(--wa)}
 </style></head><body>
 <header><span>PROMINOX · Pointage</span><small id="who"></small></header>
 <nav><button data-t="sc" class="on">Scanner</button><button data-t="td">Journée</button><button data-t="mo">Mois</button><button data-t="rg">Réglages</button></nav>
 <main>
 <section class="pg on" id="sc">
- <div class="card"><div id="vwrap"><video id="v" playsinline muted></video><div id="frame"><span></span><span></span><span></span><span></span></div><div id="hint">Placez le QR dans le carré · réglez le zoom</div></div><canvas id="c" hidden></canvas>
+ <div class="card"><div class="seg" id="mode"><button data-m="e" class="on">↓ Entrée</button><button data-m="s">↑ Sortie</button></div><div id="vwrap"><video id="v" playsinline muted></video><div id="frame"><span></span><span></span><span></span><span></span></div><div id="hint">Placez le QR dans le carré · réglez le zoom</div></div><canvas id="c" hidden></canvas>
   <div class="row"><button class="b" id="cam">Démarrer la caméra</button></div>
   <div id="zrow" style="display:none;align-items:center;gap:10px;margin-top:10px"><span class="mut" style="font-size:13px;white-space:nowrap">🔍 Zoom</span><input id="zoom" type="range" min="1" max="4" step="0.1" value="1" style="flex:1"><span id="zval" class="mut" style="font-size:13px;width:38px;text-align:right">1.0×</span></div>
   <div id="res"></div></div>
- <p class="mut" style="margin:-4px 2px 12px">1er scan = <b>Entrée</b> · 2e scan = <b>Sortie</b>. Les heures travaillées et les <b>heures supplémentaires</b> sont calculées automatiquement.</p>
+ <p class="mut" style="margin:-4px 2px 12px">Choisis <b>Entrée</b> (matin) ou <b>Sortie</b> (soir), puis scanne les badges. Les heures et les <b>heures supplémentaires</b> sont calculées automatiquement.</p>
  <div class="card"><h3>Saisie manuelle</h3><div class="row" style="margin-top:0"><input id="man" placeholder="CIN (ex. H118474)" inputmode="text"><button class="b" id="mb" style="width:110px">Pointer</button></div></div>
  <div class="kp"><div><b id="k1">0</b><span class="mut">Pointés</span></div><div><b id="k2">0</b><span class="mut">Restants</span></div></div>
 </section>
 <section class="pg" id="td">
  <div class="card"><input type="date" id="dt"></div>
+ <div class="card"><h3>Pointage par sélection</h3>
+  <p class="mut">Coche les présents. En validant, tous ceux qui ne sont <b>pas cochés</b> passent automatiquement en <b>Absent</b>.</p>
+  <div class="row" style="margin-top:0"><input id="qsearch" placeholder="Rechercher un nom / CIN"><button class="b g" id="qall" style="width:130px;white-space:nowrap">Tout cocher</button></div>
+  <div id="qlist" style="max-height:42vh;overflow:auto;margin-top:8px"></div>
+  <button class="b" id="qval" style="margin-top:10px">Valider (le reste = Absent)</button>
+ </div>
  <div class="kp"><div><b id="p1">0</b><span class="mut">Présents</span></div><div><b id="p2">0</b><span class="mut">Non pointés</span></div></div>
  <div class="card"><h3>Non pointés (choisir le statut)</h3><div id="lnp"></div></div>
  <div class="card"><h3>Présents</h3><div id="lp"></div></div>
@@ -10195,7 +10205,7 @@ function normH(){return (parseFloat(S.normH)>0?parseFloat(S.normH):8)*60}
 function wrk(l){if(!l)return null;var e=l.e||l.t;if(!e||!l.s)return null;var em=mns(e),sm=mns(l.s);if(sm<em)sm+=1440;return sm-em}
 /* onglets */
 var tabs=document.querySelectorAll('nav button');
-tabs.forEach(function(b){b.onclick=function(){tabs.forEach(function(x){x.classList.toggle('on',x===b)});document.querySelectorAll('.pg').forEach(function(p){p.classList.toggle('on',p.id===b.dataset.t)});if(b.dataset.t!=='sc')stopCam();if(b.dataset.t==='td')renderDay();if(b.dataset.t==='mo')renderMonth();}});
+tabs.forEach(function(b){b.onclick=function(){tabs.forEach(function(x){x.classList.toggle('on',x===b)});document.querySelectorAll('.pg').forEach(function(p){p.classList.toggle('on',p.id===b.dataset.t)});if(b.dataset.t!=='sc')stopCam();if(b.dataset.t==='td'){initQuick();renderDay();renderQuick();}if(b.dataset.t==='mo')renderMonth();}});
 /* pointage */
 function parseQR(t){
   t=String(t||'').trim();var o={cin:'',nom:'',fonc:'',exp:0},m=t.match(/[#?&]p=([^&#\s]+)/);
@@ -10219,14 +10229,12 @@ function mark(txt){
   }
   var n=new Date(),d=dstr(n),hh=tstr(n);S.logs[d]=S.logs[d]||{};var cur=S.logs[d][e.cin];
   var nmx=esc(nm(e))+(e.fonc?'<br><small>'+esc(e.fonc)+'</small>':'')+(q.exp?'<br><small>\u26a0 '+q.exp+' document(s) expir\u00e9(s)</small>':'');
-  if(!cur){
-    S.logs[d][e.cin]={e:hh,by:S.resp||''};if(S.st[d])delete S.st[d][e.cin];save();
-    show(q.exp?'wa':'ok','ENTR\u00c9E \u2713 '+hh+'<br>'+nmx);
+  if(MODE==='s'){
+    if(!cur){S.logs[d][e.cin]={e:'',s:hh,by:S.resp||''};save();show('wa','SORTIE \u2713 '+hh+'<br>'+nmx+'<br><small>\u26a0 Aucune entr\u00e9e enregistr\u00e9e ce jour</small>');}
+    else{var en=cur.e||cur.t;cur.e=en;cur.s=hh;delete cur.t;save();var w=wrk(cur),su=w==null?null:Math.max(0,w-normH());var det=(en?('Entr\u00e9e '+en+' \u2192 '):'')+'Sortie '+hh+(w!=null?'<br>Travaill\u00e9 : <b>'+hm(w)+'</b>'+(su?' \u00b7 Supp <b>'+hm(su)+'</b>':' \u00b7 pas d\'heures supp'):'<br><small>\u26a0 pas d\'entr\u00e9e</small>');show('ok','SORTIE \u2713 '+hh+'<br>'+nmx+'<br><small>'+det+'</small>');}
   }else{
-    var en=cur.e||cur.t;cur.e=en;cur.s=hh;delete cur.t;save();
-    var w=wrk(cur),su=w==null?null:Math.max(0,w-normH());
-    var det='Entr\u00e9e '+en+' \u2192 Sortie '+hh+(w!=null?'<br>Travaill\u00e9 : <b>'+hm(w)+'</b>'+(su?' \u00b7 Supp <b>'+hm(su)+'</b>':' \u00b7 pas d\'heures supp'):'');
-    show('ok','SORTIE \u2713 '+hh+'<br>'+nmx+'<br><small>'+det+'</small>');
+    if(cur&&(cur.e||cur.t)){show('wa','D\u00e9j\u00e0 point\u00e9 entr\u00e9e \u00e0 '+(cur.e||cur.t)+'<br>'+nmx+'<br><small>Passe en mode Sortie pour pointer la sortie</small>');}
+    else{S.logs[d][e.cin]=Object.assign({},cur,{e:hh,by:S.resp||''});delete S.logs[d][e.cin].t;if(S.st[d])delete S.st[d][e.cin];save();show(q.exp?'wa':'ok','ENTR\u00c9E \u2713 '+hh+'<br>'+nmx);}
   }
   try{navigator.vibrate&&navigator.vibrate(120)}catch(x){}
   if(typeof renderDay==='function')renderDay();kp();
@@ -10234,7 +10242,7 @@ function mark(txt){
 function kp(){var d=dstr(new Date()),L=S.logs[d]||{},n=Object.keys(L).length,inl=S.emps.filter(function(e){return L[e.cin]}).length;$('k1').textContent=n;$('k2').textContent=S.emps.length?Math.max(0,S.emps.length-inl):'-'}
 $('mb').onclick=function(){var v=$('man').value.trim();if(v){mark(v);$('man').value=''}};
 /* camera */
-var stream=null,scan=false,lock=0,zoom=1,zoomCap=null,v=$('v'),cv=$('c'),cx=cv.getContext('2d',{willReadFrequently:true});
+var stream=null,scan=false,lock=0,zoom=1,zoomCap=null,MODE='e',v=$('v'),cv=$('c'),cx=cv.getContext('2d',{willReadFrequently:true});
 function stopCam(){scan=false;if(stream){stream.getTracks().forEach(function(t){t.stop()});stream=null}v.srcObject=null;$('cam').textContent='D\u00e9marrer la cam\u00e9ra';$('zrow').style.display='none';v.style.transform='scale(1)';zoom=1;zoomCap=null;}
 $('cam').onclick=function(){
   if(stream){stopCam();return}
@@ -10253,6 +10261,8 @@ $('zoom').oninput=function(){
   if(zoomCap){try{zoomCap.track.applyConstraints({advanced:[{zoom:zoom}]});v.style.transform='scale(1)';return;}catch(e){}}
   v.style.transform='scale('+zoom+')';
 };
+var modeBtns=document.querySelectorAll('#mode button');
+modeBtns.forEach(function(b){b.onclick=function(){MODE=b.dataset.m;modeBtns.forEach(function(x){x.classList.toggle('on',x===b)});$('res').className='';$('res').innerHTML=''}});
 var _lastScan=0;
 function _dec(sx,sy,s,cap){
   var k=Math.min(1,cap/s),c=Math.max(1,Math.round(s*k));
@@ -10286,7 +10296,7 @@ function tick(){
   requestAnimationFrame(tick);
 }
 /* journee */
-var dt=$('dt');dt.value=dstr(new Date());dt.onchange=renderDay;
+var dt=$('dt');dt.value=dstr(new Date());dt.onchange=function(){initQuick();renderDay();renderQuick()};
 var STS=['Pr\u00e9sent','Absent','Cong\u00e9','Maladie','Absent justifi\u00e9'];
 function dayEmps(L){var E=S.emps.slice();Object.keys(L).forEach(function(c){if(!emp(c)){var k=S.known[c]||{};E.push({cin:c,nom:k.nom||'',prenom:'',fonc:k.fonc||''})}});return E}
 function renderDay(){
@@ -10301,6 +10311,27 @@ function renderDay(){
   document.querySelectorAll('[data-s]').forEach(function(s){s.onchange=function(){if(s.value==='Pr\u00e9sent'){var cin=s.dataset.s,nn=new Date();S.logs[d]=S.logs[d]||{};if(!S.logs[d][cin])S.logs[d][cin]={e:tstr(nn),by:S.resp||''};if(S.st[d])delete S.st[d][cin];save();renderDay();kp();return}S.st[d]=S.st[d]||{};S.st[d][s.dataset.s]=s.value;save()}});
   document.querySelectorAll('[data-u]').forEach(function(u){u.onclick=function(){if(confirm('Annuler le pointage ?')){delete S.logs[d][u.dataset.u];save();renderDay();kp()}}});
 }
+var qsel={};
+function initQuick(){qsel={};var L=S.logs[dt.value]||{};Object.keys(L).forEach(function(c){qsel[c]=true})}
+function renderQuick(){
+  var d=dt.value||dstr(new Date()),E=dayEmps(S.logs[d]||{});
+  if(!E.length){$('qlist').innerHTML='<p class="mut">Importe la liste du personnel (R\u00e9glages) pour utiliser la s\u00e9lection.</p>';return}
+  var f=norm($('qsearch').value),h='';
+  E.forEach(function(e){if(f&&norm(nm(e)+' '+e.cin).indexOf(f)<0)return;h+='<label class="it" style="cursor:pointer"><span>'+esc(nm(e))+'<small>'+esc(e.cin)+(e.fonc?' \u00b7 '+esc(e.fonc):'')+'</small></span><input type="checkbox" data-q="'+esc(e.cin)+'"'+(qsel[e.cin]?' checked':'')+' style="width:22px;height:22px;flex:0 0 auto"></label>'});
+  $('qlist').innerHTML=h||'<p class="mut">Aucun r\u00e9sultat.</p>';
+  document.querySelectorAll('[data-q]').forEach(function(c){c.onchange=function(){if(c.checked)qsel[c.dataset.q]=true;else delete qsel[c.dataset.q]}});
+}
+$('qsearch').oninput=renderQuick;
+$('qall').onclick=function(){var d=dt.value||dstr(new Date()),E=dayEmps(S.logs[d]||{});var allOn=E.length&&E.every(function(e){return qsel[e.cin]});E.forEach(function(e){if(allOn)delete qsel[e.cin];else qsel[e.cin]=true});renderQuick()};
+$('qval').onclick=function(){
+  var d=dt.value||dstr(new Date()),E=dayEmps(S.logs[d]||{});
+  if(!E.length){alert('Importe d\'abord la liste du personnel (R\u00e9glages).');return}
+  var pres=0,abs=0;E.forEach(function(e){if(qsel[e.cin])pres++;else abs++});
+  if(!confirm(pres+' pr\u00e9sent(s), '+abs+' absent(s). Valider ? Les non coch\u00e9s passeront en Absent.'))return;
+  var n=new Date();S.logs[d]=S.logs[d]||{};S.st[d]=S.st[d]||{};
+  E.forEach(function(e){if(qsel[e.cin]){if(!S.logs[d][e.cin])S.logs[d][e.cin]={e:tstr(n),by:S.resp||''};delete S.st[d][e.cin]}else{if(S.logs[d][e.cin])delete S.logs[d][e.cin];S.st[d][e.cin]='Absent'}});
+  save();renderDay();kp();alert('Pointage enregistr\u00e9 : '+pres+' pr\u00e9sent(s), '+abs+' absent(s).');
+};
 function dl(name,txt,mime){
   var blob=new Blob([txt],{type:mime}),file;try{file=new File([blob],name,{type:mime})}catch(e){}
   if(file&&navigator.canShare&&navigator.canShare({files:[file]})){navigator.share({files:[file]}).catch(function(){});return}
