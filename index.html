@@ -58,6 +58,7 @@ h3{margin:4px 0 8px;font-size:16px}.mut{color:var(--mut);font-size:14px}
  <div class="card"><input type="date" id="dt"></div>
  <div class="card"><h3>Pointage par sélection</h3>
   <p class="mut">Coche les présents. En validant, tous ceux qui ne sont <b>pas cochés</b> passent automatiquement en <b>Absent</b>.</p>
+  <div class="seg" id="qmode"><button data-qm="e" class="on">↓ Entrée</button><button data-qm="s">↑ Sortie</button></div>
   <div class="row" style="margin-top:0"><input id="qsearch" placeholder="Rechercher un nom / CIN"><button class="b g" id="qall" style="width:130px;white-space:nowrap">Tout cocher</button></div>
   <div id="qlist" style="max-height:42vh;overflow:auto;margin-top:8px"></div>
   <button class="b" id="qval" style="margin-top:10px">Valider (le reste = Absent)</button>
@@ -10325,8 +10326,12 @@ function renderDay(){
   document.querySelectorAll('[data-s]').forEach(function(s){s.onchange=function(){if(s.value==='Pr\u00e9sent'){var cin=s.dataset.s,nn=new Date();S.logs[d]=S.logs[d]||{};if(!S.logs[d][cin])S.logs[d][cin]={e:tstr(nn),by:S.resp||''};if(S.st[d])delete S.st[d][cin];save();renderDay();kp();return}S.st[d]=S.st[d]||{};S.st[d][s.dataset.s]=s.value;save()}});
   document.querySelectorAll('[data-u]').forEach(function(u){u.onclick=function(){if(confirm('Annuler le pointage ?')){delete S.logs[d][u.dataset.u];save();renderDay();kp()}}});
 }
-var qsel={};
-function initQuick(){qsel={};var L=S.logs[dt.value]||{};Object.keys(L).forEach(function(c){qsel[c]=true})}
+var qsel={},qmode='e';
+var qmodeBtns=document.querySelectorAll('#qmode button');
+qmodeBtns.forEach(function(b){b.onclick=function(){qmode=b.dataset.qm;qmodeBtns.forEach(function(x){x.classList.toggle('on',x===b)});renderQuick()}});
+function initQuick(){qsel={};var L=S.logs[dt.value]||{},mo=qmode;
+  dayEmps(L).forEach(function(e){var l=L[e.cin];if(!l)return;if(mo==='e'){if(l.e||l.t)qsel[e.cin]=true}else{if(l.s)qsel[e.cin]=true}});
+}
 function renderQuick(){
   var d=dt.value||dstr(new Date()),E=dayEmps(S.logs[d]||{});
   if(!E.length){$('qlist').innerHTML='<p class="mut">Importe la liste du personnel (R\u00e9glages) pour utiliser la s\u00e9lection.</p>';return}
@@ -10341,10 +10346,17 @@ $('qval').onclick=function(){
   var d=dt.value||dstr(new Date()),E=dayEmps(S.logs[d]||{});
   if(!E.length){alert('Importe d\'abord la liste du personnel (R\u00e9glages).');return}
   var pres=0,abs=0;E.forEach(function(e){if(qsel[e.cin])pres++;else abs++});
-  if(!confirm(pres+' pr\u00e9sent(s), '+abs+' absent(s). Valider ? Les non coch\u00e9s passeront en Absent.'))return;
-  var n=new Date();S.logs[d]=S.logs[d]||{};S.st[d]=S.st[d]||{};
-  E.forEach(function(e){if(qsel[e.cin]){if(!S.logs[d][e.cin])S.logs[d][e.cin]={e:tstr(n),by:S.resp||''};delete S.st[d][e.cin]}else{if(S.logs[d][e.cin])delete S.logs[d][e.cin];S.st[d][e.cin]='Absent'}});
-  save();renderDay();kp();alert('Pointage enregistr\u00e9 : '+pres+' pr\u00e9sent(s), '+abs+' absent(s).');
+  var nn=new Date(),hh=tstr(nn);
+  if(qmode==='e'){
+    if(!confirm(pres+' pr\u00e9sent(s) \u2192 entr\u00e9e '+hh+', '+abs+' non coch\u00e9(s) passeront en Absent. Valider ?'))return;
+    S.logs[d]=S.logs[d]||{};S.st[d]=S.st[d]||{};
+    E.forEach(function(e){if(qsel[e.cin]){if(!S.logs[d][e.cin])S.logs[d][e.cin]={e:hh,by:S.resp||''};delete S.st[d][e.cin]}else{if(S.logs[d][e.cin])delete S.logs[d][e.cin];S.st[d][e.cin]='Absent'}});
+    save();renderDay();kp();alert('Pointage enregistr\u00e9 : '+pres+' pr\u00e9sent(s), '+abs+' absent(s).');
+  }else{
+    var sfait=0;E.forEach(function(e){var l=(S.logs[d]||{})[e.cin];if(qsel[e.cin]&&l){var en=l.e||l.t;if(en){l.e=en;l.s=hh;delete l.t;sfait++}}});
+    if(!sfait){alert('Personne \u00e0 pointer en sortie pour ce jour.\n\nAstuce : passe d\'abord en mode Entr\u00e9e (ou scanne les badges le matin), puis reviens ici pour la sortie.');return}
+    save();renderDay();renderSite();kp();alert('Sortie enregistr\u00e9e pour '+sfait+' personne(s) \u00e0 '+hh+'.');
+  }
 };
 function dl(name,txt,mime){
   var blob=new Blob([txt],{type:mime}),file;try{file=new File([blob],name,{type:mime})}catch(e){}
